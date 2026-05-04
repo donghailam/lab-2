@@ -44,3 +44,4 @@ Edit files to:
 * Modify API logic
 * Connect to AI services
 * Store data in database
+link video: https://drive.google.com/drive/folders/1YyTVPfAPQ9Tl-JcSEL8CKYSWE9_QvYlV?usp=sharing
