@@ -1,8 +1,10 @@
 venv/
 env/
+.env
 
 serviceAccountKey.json
 backend/serviceAccountKey.json
+frontend/serviceAccountKey.json
 
 __pycache__/
 *.pyc
