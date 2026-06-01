@@ -1,11 +1,15 @@
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any, Dict, Optional
+import ast
+import operator
 import os
 
 import firebase_admin
 from fastapi import Depends, FastAPI, Header, HTTPException, Query, status
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.responses import FileResponse
+from fastapi.staticfiles import StaticFiles
 from firebase_admin import auth, credentials, firestore
 from pydantic import BaseModel, Field
 
@@ -48,10 +52,23 @@ app.add_middleware(
     allow_headers=["*"],
 )
 db = create_firestore_client()
+frontend_dir = Path(__file__).resolve().parent.parent / "frontend"
+app.mount("/frontend", StaticFiles(directory=frontend_dir), name="frontend")
 
 
 class ChatRequest(BaseModel):
     message: str = Field(..., min_length=1, max_length=1000)
+
+
+ALLOWED_OPERATORS = {
+    ast.Add: operator.add,
+    ast.Sub: operator.sub,
+    ast.Mult: operator.mul,
+    ast.Div: operator.truediv,
+    ast.Mod: operator.mod,
+    ast.Pow: operator.pow,
+    ast.USub: operator.neg,
+}
 
 
 def require_bearer_token(authorization: Optional[str]) -> str:
@@ -88,9 +105,136 @@ def serialize_message(message: Dict[str, Any]) -> Dict[str, Any]:
     return message
 
 
+def load_recent_messages(uid: str, limit: int = 6) -> list[Dict[str, Any]]:
+    records = []
+    docs = db.collection("messages").where("uid", "==", uid).stream()
+
+    for doc in docs:
+        item = doc.to_dict()
+        item["id"] = doc.id
+        records.append(item)
+
+    records.sort(
+        key=lambda item: item.get("created_at") or datetime.min.replace(tzinfo=timezone.utc)
+    )
+    return records[-limit:]
+
+
+def eval_math_expression(expression: str) -> Optional[float]:
+    sanitized = expression.replace("^", "**").strip()
+
+    def _eval(node):
+        if isinstance(node, ast.Constant) and isinstance(node.value, (int, float)):
+            return node.value
+        if isinstance(node, ast.BinOp) and type(node.op) in ALLOWED_OPERATORS:
+            left = _eval(node.left)
+            right = _eval(node.right)
+            return ALLOWED_OPERATORS[type(node.op)](left, right)
+        if isinstance(node, ast.UnaryOp) and type(node.op) in ALLOWED_OPERATORS:
+            operand = _eval(node.operand)
+            return ALLOWED_OPERATORS[type(node.op)](operand)
+        raise ValueError("Unsupported expression")
+
+    try:
+        parsed = ast.parse(sanitized, mode="eval")
+        result = _eval(parsed.body)
+        return float(result)
+    except Exception:
+        return None
+
+
+def detect_math_request(message: str) -> Optional[str]:
+    candidate = message.lower().replace("=", " ").strip()
+    normalized = (
+        candidate.replace("tính", "")
+        .replace("bao nhiêu", "")
+        .replace("bằng mấy", "")
+        .replace("là bao nhiêu", "")
+        .strip()
+    )
+    allowed_chars = set("0123456789+-*/().%^ ")
+    if normalized and all(char in allowed_chars for char in normalized):
+        value = eval_math_expression(normalized)
+        if value is not None:
+            if value.is_integer():
+                return f"Kết quả là {int(value)}."
+            return f"Kết quả là {value:.4f}".rstrip("0").rstrip(".") + "."
+    return None
+
+
+def build_context_summary(recent_messages: list[Dict[str, Any]]) -> str:
+    if not recent_messages:
+        return ""
+
+    latest = recent_messages[-1]["user_message"]
+    return f"Trước đó bạn vừa nói về: \"{latest}\". "
+
+
+def generate_reply(user_message: str, recent_messages: list[Dict[str, Any]]) -> str:
+    message = user_message.strip()
+    lowered = message.lower()
+    context = build_context_summary(recent_messages[:-1] if recent_messages else [])
+
+    math_reply = detect_math_request(message)
+    if math_reply:
+        return math_reply
+
+    if any(keyword in lowered for keyword in ["xin chào", "chào", "hello", "hi "]):
+        return (
+            f"{context}Chào bạn. Mình có thể trả lời câu hỏi ngắn, giải thích ý tưởng, "
+            "gợi ý các bước làm hoặc tính toán cơ bản."
+        )
+
+    if any(keyword in lowered for keyword in ["bạn làm được gì", "mày làm được gì", "help", "giúp gì"]):
+        return (
+            "Mình hỗ trợ tốt nhất ở 4 kiểu: "
+            "1) giải thích ngắn một khái niệm, "
+            "2) tóm tắt hoặc lập kế hoạch từng bước, "
+            "3) so sánh 2 lựa chọn, "
+            "4) tính toán biểu thức cơ bản. "
+            "Bạn cứ hỏi thẳng mục tiêu."
+        )
+
+    if any(keyword in lowered for keyword in ["so sánh", "khác gì", "nên chọn"]):
+        return (
+            f"{context}Để so sánh gọn mà hữu ích, bạn nên nhìn theo 3 tiêu chí: "
+            "mục tiêu dùng, độ phức tạp triển khai, và chi phí/rủi ro vận hành. "
+            "Nếu bạn đưa 2 lựa chọn cụ thể, mình sẽ so sánh từng ý."
+        )
+
+    if any(keyword in lowered for keyword in ["kế hoạch", "lộ trình", "các bước", "bắt đầu từ đâu"]):
+        return (
+            f"{context}Bạn có thể bắt đầu theo thứ tự: "
+            "1) chốt mục tiêu đầu ra, "
+            "2) chia thành các bước nhỏ có thể kiểm tra được, "
+            "3) làm phần lõi trước, "
+            "4) kiểm thử lại với dữ liệu thật. "
+            "Nếu muốn, mình có thể tách tiếp thành checklist cụ thể."
+        )
+
+    if lowered.endswith("?") or any(
+        keyword in lowered for keyword in ["là gì", "tại sao", "vì sao", "như thế nào", "giải thích"]
+    ):
+        return (
+            f"{context}Theo cách hiểu đơn giản, {message.rstrip('?')} "
+            "là một vấn đề nên nhìn theo mục tiêu, đầu vào, cách xử lý và kết quả đầu ra. "
+            "Nếu bạn muốn, mình có thể giải thích theo kiểu ngắn gọn hoặc ví dụ thực tế."
+        )
+
+    return (
+        f"{context}Mình đã nhận nội dung: \"{message}\". "
+        "Nếu bạn muốn câu trả lời hữu ích hơn, hãy nói rõ bạn cần: giải thích, tóm tắt, so sánh hay hướng dẫn từng bước."
+    )
+
+
 @app.get("/")
 def root():
     return {"message": "Firebase chatbot API is running."}
+
+
+@app.get("/app", include_in_schema=False)
+def frontend_app():
+    return FileResponse(frontend_dir / "index.html")
 
 
 @app.get("/health")
@@ -116,7 +260,8 @@ def chat(req: ChatRequest, current_user: Dict[str, Any] = Depends(get_current_us
             detail="Message must not be empty.",
         )
 
-    reply = f"Bot: I received '{user_message}'."
+    recent_messages = load_recent_messages(current_user["uid"])
+    reply = generate_reply(user_message, recent_messages)
     message = {
         "uid": current_user["uid"],
         "email": current_user.get("email"),
