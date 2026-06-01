@@ -5,7 +5,7 @@ import {
   signOut
 } from "https://www.gstatic.com/firebasejs/10.12.0/firebase-auth.js";
 
-const API_BASE_URL = "http://127.0.0.1:8000";
+const API_BASE_URL = window.location.port === "8000" ? window.location.origin : "http://localhost:8000";
 
 const loginForm = document.getElementById("login-form");
 const chatForm = document.getElementById("chat-form");
