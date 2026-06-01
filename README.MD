@@ -101,3 +101,5 @@ Authorization: Bearer <firebase_id_token>
 - The backend only returns messages for the authenticated user.
 - Do not commit real Firebase service account files to Git.
 - If you serve frontend from another port, update `CORS_ALLOW_ORIGINS` for the backend.
+```
+https://drive.google.com/drive/folders/1YyTVPfAPQ9Tl-JcSEL8CKYSWE9_QvYlV
