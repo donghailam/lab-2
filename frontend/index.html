@@ -1,25 +1,79 @@
 <!DOCTYPE html>
-<html>
+<html lang="en">
 <head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>Chatbot Lab</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@400;500;700&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="style.css">
 </head>
 <body>
+  <main class="page-shell">
+    <section class="panel hero">
+      <p class="eyebrow">Lab 2 - API and Firebase</p>
+      <h1>Firebase Chatbot</h1>
+      <p class="hero-copy">
+        Sign in with Firebase Authentication, send messages to FastAPI, and load the
+        Firestore history saved for the current user.
+      </p>
+      <p id="auth-hint" class="hint">
+        Sign in with Firebase Email/Password to start chatting.
+      </p>
+    </section>
 
-<h2>Login</h2>
-<input id="email" placeholder="email">
-<input id="password" type="password">
-<button id="login">Login</button>
-<button id="logout">Logout</button>
+    <section class="panel grid">
+      <div class="card">
+        <div class="card-header">
+          <h2>Login</h2>
+          <button id="logout" class="ghost" disabled>Logout</button>
+        </div>
+        <form id="login-form" class="stack">
+          <label>
+            <span>Email</span>
+            <input id="email" type="email" placeholder="student@example.com" required>
+          </label>
+          <label>
+            <span>Password</span>
+            <input id="password" type="password" placeholder="Your password" required>
+          </label>
+          <button id="login" type="submit">Sign In</button>
+        </form>
+      </div>
 
-<hr>
+      <div class="card">
+        <div class="card-header">
+          <h2>Current User</h2>
+          <span class="badge">Verified by backend</span>
+        </div>
+        <dl class="identity">
+          <div>
+            <dt>Email</dt>
+            <dd id="user-email">Not signed in</dd>
+          </div>
+          <div>
+            <dt>UID</dt>
+            <dd id="user-uid">-</dd>
+          </div>
+        </dl>
+        <p id="status" class="status" data-type="info">Waiting for login.</p>
+      </div>
+    </section>
 
-<h2>Chat</h2>
-<input id="msg">
-<button id="send">Send</button>
+    <section class="panel card chat-card">
+      <div class="card-header">
+        <h2>Chat</h2>
+        <button id="reload-history" class="ghost" disabled>Reload History</button>
+      </div>
+      <form id="chat-form" class="composer">
+        <input id="message" type="text" placeholder="Type a message for the bot" maxlength="1000" required>
+        <button id="composer" type="submit" disabled>Send</button>
+      </form>
+      <div id="chat" class="chat-log"></div>
+    </section>
+  </main>
 
-<div id="chat"></div>
-
-<script type="module" src="app.js"></script>
-
+  <script type="module" src="app.js"></script>
 </body>
 </html>
